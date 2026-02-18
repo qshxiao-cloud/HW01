@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Chinese Listening Championship 6.0</title>
+
+<style>
+body{
+  margin: 0;
+  text-align: center;
+  font-family: "Microsoft YaHei", sans-serif;
+  background: url("bg.png") no-repeat center center fixed;
+  background-size: cover;
+  animation: zoomBg 20s infinite alternate ease-in-out;
+}
+
+h1{margin-top:20px;}
+
+button{
+  font-size:20px;
+  padding:10px 25px;
+  border-radius:25px;
+  border:none;
+  margin:8px;
+  cursor:pointer;
+}
+
+button.choice{
+  font-size:60px;
+  padding:30px 60px;
+}
+
+#timerContainer{
+  margin:15px auto;
+  width:120px;
+  height:120px;
+}
+
+svg{
+  transform:rotate(-90deg);
+}
+
+#timerText{
+  position:relative;
+  top:-85px;
+  font-size:28px;
+  font-weight:bold;
+}
+
+#message{height:35px;font-size:22px;}
+#report{white-space:pre-line;font-size:20px;margin-top:20px;}
+</style>
+</head>
+
+<body>
+
+<h1>听音选字课堂系统<br>Chinese Listening Championship</h1>
+
+<div id="startScreen">
+  学生姓名 Student Name：
+  <input type="text" id="studentName">
+  <br>
+  <button onclick="startGame()">开始游戏 Start Game</button>
+</div>
+
+<div id="gameArea" style="display:none;">
+  <div id="progress"></div>
+
+  <div id="timerContainer">
+    <svg width="120" height="120">
+      <circle cx="60" cy="60" r="50" stroke="#ddd" stroke-width="10" fill="none"/>
+      <circle id="progressCircle"
+              cx="60" cy="60" r="50"
+              stroke="green"
+              stroke-width="10"
+              fill="none"
+              stroke-dasharray="314"
+              stroke-dashoffset="0"/>
+    </svg>
+    <div id="timerText">7</div>
+  </div>
+
+  <button onclick="replayAudio()">🔊 重播 Replay</button>
+  <div id="choices"></div>
+  <div id="message"></div>
+</div>
+
+<div id="reportArea" style="display:none;">
+  <div id="report"></div>
+  <button onclick="resetGame()">返回首页 Back Home</button>
+</div>
+
+<script>
+
+// ⭐⭐⭐ 老师可替换汉字 + 拼音 ⭐⭐⭐
+const words=[
+  {char:"天",py:"tian"},
+  {char:"地",py:"di"},
+  {char:"人",py:"ren"},
+  {char:"你",py:"ni"},
+  {char:"我",py:"wo"},
+  {char:"他",py:"ta"},
+  {char:"她",py:"ta"},
+  {char:"它",py:"ta"},
+  {char:"山",py:"shan"},
+  {char:"水",py:"shui"},
+  {char:"火",py:"huo"},
+  {char:"口",py:"kou"},
+  {char:"手",py:"shou"},
+  {char:"目",py:"mu"},
+  {char:"心",py:"xin"}
+];
+
+let student="";
+let currentIndex=0;
+let wrongWords=[];
+let reviewMode=false;
+let reviewList=[];
+let currentWord="";
+let correctCount=0;
+let totalAnswered=0;
+
+let timerInterval;
+let timeLeft=7;
+let answered=false;
+
+const circle=document.getElementById("progressCircle");
+const circumference=314;
+
+function shuffle(a){return a.sort(()=>Math.random()-0.5);}
+
+function speak(word){
+  currentWord=word;
+  const u=new SpeechSynthesisUtterance(word);
+  u.lang="zh-CN";
+  speechSynthesis.cancel();
+  speechSynthesis.speak(u);
+}
+
+function replayAudio(){speak(currentWord);}
+
+function startTimer(){
+  timeLeft=7;
+  answered=false;
+  circle.style.stroke="green";
+  circle.style.strokeDashoffset=0;
+  document.getElementById("timerText").innerText=timeLeft;
+
+  clearInterval(timerInterval);
+  timerInterval=setInterval(()=>{
+    timeLeft--;
+    let offset=circumference*(1-timeLeft/7);
+    circle.style.strokeDashoffset=offset;
+    document.getElementById("timerText").innerText=timeLeft;
+
+    if(timeLeft<=0){
+      clearInterval(timerInterval);
+      if(!answered)handleTimeout();
+    }
+  },1000);
+}
+
+function handleTimeout(){
+  let list=reviewMode?reviewList:words;
+  if(!reviewMode)wrongWords.push(list[currentIndex]);
+  document.getElementById("message").innerText=
+    "超时！Time's up!";
+  totalAnswered++;
+  nextQuestion();
+}
+
+function startGame(){
+  student=document.getElementById("studentName").value.trim();
+  if(student===""){alert("请输入姓名 Please enter name");return;}
+
+  document.getElementById("startScreen").style.display="none";
+  document.getElementById("gameArea").style.display="block";
+
+  currentIndex=0;
+  wrongWords=[];
+  reviewMode=false;
+  correctCount=0;
+  totalAnswered=0;
+
+  loadQuestion();
+}
+
+function loadQuestion(){
+  document.getElementById("message").innerText="";
+  let list=reviewMode?reviewList:words;
+  let correct=list[currentIndex];
+
+  document.getElementById("progress").innerText=
+    (reviewMode?"错题复习 Review ":"")+
+    "第 "+(currentIndex+1)+" 题 / "+list.length;
+
+  // 过滤同拼音字
+  let filtered=words.filter(w=>w.py!==correct.py);
+
+  let options=shuffle(filtered).slice(0,3);
+  options.push(correct);
+  options=shuffle(options);
+
+  let div=document.getElementById("choices");
+  div.innerHTML="";
+  options.forEach(o=>{
+    let btn=document.createElement("button");
+    btn.innerText=o.char;
+    btn.className="choice";
+    btn.onclick=()=>checkAnswer(o);
+    div.appendChild(btn);
+  });
+
+  setTimeout(()=>speak(correct.char),500);
+  startTimer();
+}
+
+function checkAnswer(sel){
+  if(answered)return;
+  answered=true;
+  clearInterval(timerInterval);
+
+  let list=reviewMode?reviewList:words;
+  totalAnswered++;
+
+  if(sel.char===list[currentIndex].char){
+    correctCount++;
+  }else{
+    if(!reviewMode)wrongWords.push(list[currentIndex]);
+    document.getElementById("message").innerText=
+      "记住它 Remember it!";
+  }
+
+  nextQuestion();
+}
+
+function nextQuestion(){
+  let list=reviewMode?reviewList:words;
+  currentIndex++;
+
+  if(currentIndex>=list.length){
+    if(!reviewMode&&wrongWords.length>0){
+      reviewMode=true;
+      reviewList=[...new Set(wrongWords)];
+      currentIndex=0;
+      setTimeout(loadQuestion,1000);
+    }else{
+      finishGame();
+    }
+  }else{
+    setTimeout(loadQuestion,800);
+  }
+}
+
+function saveCSV(student, accuracy, trophy, correct, total, wrongList){
+  const now = new Date().toLocaleString();
+
+  const header = "Student,Accuracy,Trophy,Correct,Total,Wrong Characters,Time\n";
+
+  // 把错字数组转换成字符串（空格分隔）
+  const wrongText = wrongList.length > 0 
+        ? wrongList.map(w => w.char).join(" ") 
+        : "None";
+
+  const row = `${student},${accuracy}%,${trophy},${correct},${total},"${wrongText}",${now}\n`;
+
+  const blob = new Blob([header + row], { type: "text/csv;charset=utf-8;" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "成绩记录.csv";
+  link.click();
+}
+
+function finishGame(){
+  document.getElementById("gameArea").style.display="none";
+  document.getElementById("reportArea").style.display="block";
+
+  let accuracy=Math.round((correctCount/totalAnswered)*100);
+
+  let trophy="";
+  if(accuracy===100) trophy="Super Star";
+  else if(accuracy>=90) trophy="Gold";
+  else if(accuracy>=75) trophy="Silver";
+  else if(accuracy>=60) trophy="Bronze";
+  else trophy="Keep Trying";
+
+  // 去重错字
+  let uniqueWrong = [...new Set(wrongWords.map(w=>w.char))];
+
+  let reportText=
+    "学生 Student: "+student+"\n\n"+
+    "练习汉字 Characters:\n"+
+    words.map(w=>w.char).join(" ")+"\n\n"+
+    "正确率 Accuracy: "+accuracy+"%\n"+
+    "奖杯 Trophy: "+trophy+"\n"+
+    "错字 Wrong Characters: "+
+    (uniqueWrong.length?uniqueWrong.join(" "):"None")+"\n\n"+
+    "完成时间 Time: "+new Date().toLocaleString();
+
+  document.getElementById("report").innerText=reportText;
+
+  // ⭐ 自动生成CSV
+  saveCSV(student, accuracy, trophy, correctCount, totalAnswered, wrongWords);
+}
+
+
+function resetGame(){
+  document.getElementById("reportArea").style.display="none";
+  document.getElementById("startScreen").style.display="block";
+}
+</script>
+
+</body>
+</html>
